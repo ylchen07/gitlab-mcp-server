@@ -1,0 +1,108 @@
+version: "3"
+
+vars:
+  BINARY_NAME: gitlab-mcp-server
+  BUILD_OUTPUT: "{{.BINARY_NAME}}{{exeExt}}"
+  GO_VERSION: "1.24"
+
+tasks:
+  default:
+    desc: "Build and run the GitLab MCP server"
+    aliases: [run]
+    deps: [build]
+    cmds:
+      - ./{{.BUILD_OUTPUT}}
+
+  build:
+    desc: "Build the GitLab MCP server executable"
+    sources:
+      - "**/*.go"
+      - "go.mod"
+      - "go.sum"
+    generates:
+      - "{{.BUILD_OUTPUT}}"
+    cmds:
+      - go build -o {{.BUILD_OUTPUT}} main.go
+
+  clean:
+    desc: "Clean build artifacts"
+    cmds:
+      - rm -f {{.BUILD_OUTPUT}}
+      - go clean
+
+  deps:
+    desc: "Download and tidy Go modules"
+    cmds:
+      - go mod download
+      - go mod tidy
+
+  test:
+    desc: "Run all tests"
+    cmds:
+      - go test -v ./...
+
+  test-race:
+    desc: "Run tests with race condition detection"
+    cmds:
+      - go test -race -v ./...
+
+  lint:
+    desc: "Run linting checks"
+    cmds:
+      - go vet ./...
+      - go fmt ./...
+
+  check:
+    desc: "Run comprehensive checks (lint + test)"
+    deps: [lint, test]
+
+  dev:
+    desc: "Development mode - build and run with auto-restart on changes"
+    deps: [build]
+    cmds:
+      - echo "Starting GitLab MCP Server in development mode..."
+      - ./{{.BUILD_OUTPUT}}
+
+  setup:
+    desc: "Initial project setup"
+    cmds:
+      - go version
+      - task: deps
+      - echo "Setup complete! Copy .env.example to .env and add your GitLab token."
+
+  env-check:
+    desc: "Check environment configuration"
+    cmds:
+      - |
+        if [ -f ".env" ]; then
+          echo "✓ .env file found"
+        else
+          echo "✗ .env file not found. Copy .env.example to .env"
+          exit 1
+        fi
+      - |
+        if [ -n "$GITLAB_ACCESS_TOKEN" ]; then
+          echo "✓ GitLab access token is set"
+        else
+          echo "✗ GITLAB_ACCESS_TOKEN environment variable not set"
+          exit 1
+        fi
+
+  start:
+    desc: "Start the server with environment checks"
+    deps: [env-check, build]
+    cmds:
+      - echo "Starting GitLab MCP Server..."
+      - ./{{.BUILD_OUTPUT}}
+
+  install:
+    desc: "Install the binary to GOPATH/bin"
+    deps: [build]
+    cmds:
+      - go install
+
+  help:
+    desc: "Show available tasks"
+    cmds:
+      - task --list
+
