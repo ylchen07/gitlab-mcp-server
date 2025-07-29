@@ -120,6 +120,15 @@ func (s *GitLabMCPServer) registerTools() {
 		),
 	)
 	s.mcpServer.AddTool(listSubgroupsTool, s.handleListSubgroups)
+
+	// Archive project tool
+	archiveProjectTool := mcp.NewTool("archive_project",
+		mcp.WithDescription("Archive a GitLab project (requires Owner role or admin permissions)"),
+		mcp.WithString("project_id_or_path", mcp.Required(),
+			mcp.Description("GitLab project ID or path with namespace"),
+		),
+	)
+	s.mcpServer.AddTool(archiveProjectTool, s.handleArchiveProject)
 }
 
 // handleHealthCheck handles the health check tool
@@ -212,6 +221,39 @@ func (s *GitLabMCPServer) handleListSubgroups(ctx context.Context, request mcp.C
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf("Found %d subgroups in group %s:\n\n%s", len(subgroups), groupIDOrPath, string(jsonData))), nil
+}
+
+// handleArchiveProject handles archiving a GitLab project
+func (s *GitLabMCPServer) handleArchiveProject(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Extract project_id_or_path from arguments
+	projectIDOrPath, err := request.RequireString("project_id_or_path")
+	if err != nil {
+		return nil, fmt.Errorf("project_id_or_path is required: %w", err)
+	}
+
+	// Archive the project
+	project, _, err := s.client.Projects.ArchiveProject(projectIDOrPath, gitlab.WithContext(ctx))
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf("Error archiving project: %v", err)), nil
+	}
+
+	// Create response with project details
+	result := map[string]any{
+		"success":            true,
+		"project_id":         project.ID,
+		"project_name":       project.Name,
+		"project_path":       project.PathWithNamespace,
+		"archived":           project.Archived,
+		"web_url":            project.WebURL,
+		"archived_timestamp": time.Now().Format(time.RFC3339),
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf("Project archived successfully but error serializing response: %v", err)), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Project '%s' archived successfully:\n\n%s", project.PathWithNamespace, string(jsonData))), nil
 }
 
 // listGroupProjectsAll lists all projects in a group and its subgroups recursively
@@ -386,6 +428,7 @@ func main() {
 	log.Println("  - list_all_group_projects: List all projects in a group and subgroups (archived=true for archived only)")
 	log.Println("  - list_direct_group_projects: List projects directly in a group")
 	log.Println("  - list_subgroups: List subgroups in a group")
+	log.Println("  - archive_project: Archive a GitLab project (requires Owner role or admin permissions)")
 
 	// Run the server
 	if err := server.Run(*useHTTP); err != nil {
