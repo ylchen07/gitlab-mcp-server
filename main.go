@@ -136,6 +136,15 @@ func (s *GitLabMCPServer) registerTools() {
 		),
 	)
 	s.mcpServer.AddTool(archiveProjectTool, s.handleArchiveProject)
+
+	// Get project status tool
+	getProjectStatusTool := mcp.NewTool("get_project_status",
+		mcp.WithDescription("Get detailed status and metadata for a single GitLab project"),
+		mcp.WithString("project_id_or_path", mcp.Required(),
+			mcp.Description("GitLab project ID or path with namespace"),
+		),
+	)
+	s.mcpServer.AddTool(getProjectStatusTool, s.handleGetProjectStatus)
 }
 
 // handleHealthCheck handles the health check tool
@@ -261,6 +270,63 @@ func (s *GitLabMCPServer) handleArchiveProject(ctx context.Context, request mcp.
 	}
 
 	return mcp.NewToolResultText(fmt.Sprintf("Project '%s' archived successfully:\n\n%s", project.PathWithNamespace, string(jsonData))), nil
+}
+
+// handleGetProjectStatus handles getting detailed status for a single project
+func (s *GitLabMCPServer) handleGetProjectStatus(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	// Extract project_id_or_path from arguments
+	projectIDOrPath, err := request.RequireString("project_id_or_path")
+	if err != nil {
+		return nil, fmt.Errorf("project_id_or_path is required: %w", err)
+	}
+
+	// Get the project
+	project, _, err := s.client.Projects.GetProject(projectIDOrPath, nil, gitlab.WithContext(ctx))
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf("Error fetching project: %v", err)), nil
+	}
+
+	// Create detailed project status response
+	result := map[string]any{
+		"id":                     project.ID,
+		"name":                   project.Name,
+		"path":                   project.Path,
+		"path_with_namespace":    project.PathWithNamespace,
+		"description":            project.Description,
+		"web_url":                project.WebURL,
+		"clone_url_http":         project.HTTPURLToRepo,
+		"clone_url_ssh":          project.SSHURLToRepo,
+		"visibility":             project.Visibility,
+		"archived":               project.Archived,
+		"created_at":             project.CreatedAt,
+		"last_activity_at":       project.LastActivityAt,
+		"default_branch":         project.DefaultBranch,
+		"issues_enabled":         project.IssuesEnabled,
+		"merge_requests_enabled": project.MergeRequestsEnabled,
+		"wiki_enabled":           project.WikiEnabled,
+		"snippets_enabled":       project.SnippetsEnabled,
+		"forks_count":            project.ForksCount,
+		"star_count":             project.StarCount,
+		"open_issues_count":      project.OpenIssuesCount,
+		"namespace": map[string]any{
+			"id":        project.Namespace.ID,
+			"name":      project.Namespace.Name,
+			"path":      project.Namespace.Path,
+			"full_path": project.Namespace.FullPath,
+			"kind":      project.Namespace.Kind,
+		},
+		"topics":       project.Topics,
+		"readme_url":   project.ReadmeURL,
+		"size":         project.Statistics.RepositorySize,
+		"commit_count": project.Statistics.CommitCount,
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf("Error serializing project status: %v", err)), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf("Project status for '%s':\n\n%s", project.PathWithNamespace, string(jsonData))), nil
 }
 
 // listGroupProjectsAll lists all projects in a group and its subgroups recursively
@@ -436,6 +502,7 @@ func main() {
 	log.Println("  - list_direct_group_projects: List projects directly in a group")
 	log.Println("  - list_subgroups: List subgroups in a group")
 	log.Println("  - archive_project: Archive a GitLab project (requires Owner role or admin permissions)")
+	log.Println("  - get_project_status: Get detailed status and metadata for a single GitLab project")
 
 	// Run the server
 	if err := server.Run(*useHTTP); err != nil {
