@@ -301,24 +301,29 @@ func (s *GitLabMCPServer) handleGetProjectStatus(ctx context.Context, request mc
 		"created_at":             project.CreatedAt,
 		"last_activity_at":       project.LastActivityAt,
 		"default_branch":         project.DefaultBranch,
-		"issues_enabled":         project.IssuesEnabled,
-		"merge_requests_enabled": project.MergeRequestsEnabled,
-		"wiki_enabled":           project.WikiEnabled,
-		"snippets_enabled":       project.SnippetsEnabled,
 		"forks_count":            project.ForksCount,
 		"star_count":             project.StarCount,
 		"open_issues_count":      project.OpenIssuesCount,
-		"namespace": map[string]any{
+		"topics":                 project.Topics,
+		"readme_url":             project.ReadmeURL,
+	}
+
+	// Add namespace information if available
+	if project.Namespace != nil {
+		result["namespace"] = map[string]any{
 			"id":        project.Namespace.ID,
 			"name":      project.Namespace.Name,
 			"path":      project.Namespace.Path,
 			"full_path": project.Namespace.FullPath,
 			"kind":      project.Namespace.Kind,
-		},
-		"topics":       project.Topics,
-		"readme_url":   project.ReadmeURL,
-		"size":         project.Statistics.RepositorySize,
-		"commit_count": project.Statistics.CommitCount,
+		}
+	}
+
+	// Add statistics if available
+	if project.Statistics != nil {
+		result["size"] = project.Statistics.RepositorySize
+		result["commit_count"] = project.Statistics.CommitCount
+		result["storage_size"] = project.Statistics.StorageSize
 	}
 
 	jsonData, err := json.MarshalIndent(result, "", "  ")
