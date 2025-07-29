@@ -53,9 +53,16 @@ func NewGitLabMCPServer() (*GitLabMCPServer, error) {
 	}
 	log.Println("GitLab access token found")
 
+	// Get GitLab server URL from environment, default to gitlab.com
+	serverURL := os.Getenv("GITLAB_SERVER_URL")
+	if serverURL == "" {
+		serverURL = "https://gitlab.com"
+	}
+	log.Printf("Using GitLab server: %s", serverURL)
+
 	// Create GitLab client
 	log.Println("Creating GitLab client...")
-	gitlabClient, err := gitlab.NewClient(token, gitlab.WithBaseURL("https://gitlab.com"))
+	gitlabClient, err := gitlab.NewClient(token, gitlab.WithBaseURL(serverURL))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create GitLab client: %w", err)
 	}
