@@ -1,4 +1,4 @@
-module gitlab-mcp-server
+module github.com/ylchen07/gitlab-mcp-server
 
 go 1.24.5
 
