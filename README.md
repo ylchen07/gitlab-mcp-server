@@ -42,7 +42,7 @@ A Model Context Protocol (MCP) server for GitLab integration, built with Go usin
    
    # Or manually
    go mod download
-   go build -o gitlab-mcp-server main.go
+   go build -o gitlab-mcp-server ./cmd/gitlab-mcp-server
    ./gitlab-mcp-server
    ```
 
@@ -129,7 +129,7 @@ go mod download
 go mod tidy
 
 # Build executable
-go build -o gitlab-mcp-server main.go
+go build -o gitlab-mcp-server ./cmd/gitlab-mcp-server
 
 # Run tests
 go test -v ./...
@@ -147,14 +147,24 @@ go vet ./...
 
 ```
 .
-├── main.go              # Main server implementation
-├── go.mod              # Go module dependencies
-├── go.sum              # Go module checksums
-├── Taskfile.yml        # Task runner configuration
-├── LICENSE             # MIT License
-├── CLAUDE.md           # AI assistant instructions
-├── .env.example        # Environment template
-└── README.md           # This file
+├── .env.example              # Environment template for local setup
+├── .github/                  # Automation and workflow configuration
+├── AGENTS.md                 # Contributor guide
+├── cmd
+│   └── gitlab-mcp-server
+│       └── main.go           # CLI entry point
+├── internal
+│   ├── app
+│   │   └── server.go         # MCP server wiring and handlers
+│   └── gitlab
+│       ├── client.go         # GitLab client construction
+│       ├── models.go         # Response DTOs for tools
+│       └── service.go        # GitLab API integration logic
+├── go.mod                    # Go module definition
+├── go.sum                    # Go dependency checksums
+├── LICENSE                   # MIT License
+├── README.md                 # Project documentation
+└── Taskfile.yml              # Task runner configuration
 ```
 
 ## Dependencies

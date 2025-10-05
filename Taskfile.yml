@@ -22,7 +22,7 @@ tasks:
     generates:
       - "{{.BUILD_OUTPUT}}"
     cmds:
-      - go build -o {{.BUILD_OUTPUT}} main.go
+      - go build -o {{.BUILD_OUTPUT}} ./cmd/gitlab-mcp-server
 
   clean:
     desc: "Clean build artifacts"
@@ -99,7 +99,7 @@ tasks:
     desc: "Install the binary to GOPATH/bin"
     deps: [build]
     cmds:
-      - go install
+      - go install ./cmd/gitlab-mcp-server
 
   help:
     desc: "Show available tasks"
