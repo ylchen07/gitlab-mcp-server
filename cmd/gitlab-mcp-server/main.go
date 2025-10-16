@@ -2,6 +2,8 @@ package main
 
 import (
 	"flag"
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"strings"
@@ -10,21 +12,28 @@ import (
 	gitlabsvc "github.com/ylchen07/gitlab-mcp-server/internal/gitlab"
 )
 
-func main() {
-	useHTTP := flag.Bool("http", false, "Expose the MCP server over HTTP instead of stdio")
-	httpAddr := flag.String("addr", ":8000", "HTTP listen address when using --http")
-	flag.Parse()
+type serverStarter func(*app.Server, bool, string) error
 
-	logger := log.New(os.Stdout, "", log.LstdFlags)
+func run(args []string, getenv func(string) string, logger *log.Logger, start serverStarter) error {
+	flagSet := flag.NewFlagSet("gitlab-mcp-server", flag.ContinueOnError)
+	flagSet.SetOutput(io.Discard)
+
+	useHTTP := flagSet.Bool("http", false, "Expose the MCP server over HTTP instead of stdio")
+	httpAddr := flagSet.String("addr", ":8000", "HTTP listen address when using --http")
+
+	if err := flagSet.Parse(args[1:]); err != nil {
+		return err
+	}
+
 	logger.Println("Starting GitLab MCP Server...")
 
-	token := strings.TrimSpace(os.Getenv("GITLAB_ACCESS_TOKEN"))
+	token := strings.TrimSpace(getenv("GITLAB_ACCESS_TOKEN"))
 	if token == "" {
-		logger.Fatal("GITLAB_ACCESS_TOKEN environment variable not set")
+		return fmt.Errorf("GITLAB_ACCESS_TOKEN environment variable not set")
 	}
 	logger.Println("GitLab access token detected")
 
-	serverURL := strings.TrimSpace(os.Getenv("GITLAB_SERVER_URL"))
+	serverURL := strings.TrimSpace(getenv("GITLAB_SERVER_URL"))
 	if serverURL == "" {
 		serverURL = "https://gitlab.com"
 		logger.Printf("GITLAB_SERVER_URL not set, defaulting to %s", serverURL)
@@ -34,7 +43,7 @@ func main() {
 
 	client, err := gitlabsvc.NewClient(token, serverURL)
 	if err != nil {
-		logger.Fatalf("Failed to create GitLab client: %v", err)
+		return fmt.Errorf("failed to create GitLab client: %w", err)
 	}
 	logger.Println("GitLab client initialized")
 
@@ -46,16 +55,30 @@ func main() {
 		logger.Printf("Registered MCP tool %s - %s", tool.Name, tool.Description)
 	}
 
-	if *useHTTP {
-		logger.Printf("Serving MCP over HTTP on %s", *httpAddr)
-		if err := srv.RunHTTP(*httpAddr); err != nil {
-			logger.Fatalf("HTTP server terminated: %v", err)
+	return start(srv, *useHTTP, *httpAddr)
+}
+
+func main() {
+	logger := log.New(os.Stdout, "", log.LstdFlags)
+
+	start := func(srv *app.Server, useHTTP bool, addr string) error {
+		if useHTTP {
+			logger.Printf("Serving MCP over HTTP on %s", addr)
+			if err := srv.RunHTTP(addr); err != nil {
+				return fmt.Errorf("HTTP server terminated: %w", err)
+			}
+			return nil
 		}
-		return
+
+		logger.Println("Serving MCP over stdio")
+		if err := srv.RunStdio(); err != nil {
+			return fmt.Errorf("STDIO server terminated: %w", err)
+		}
+
+		return nil
 	}
 
-	logger.Println("Serving MCP over stdio")
-	if err := srv.RunStdio(); err != nil {
-		logger.Fatalf("STDIO server terminated: %v", err)
+	if err := run(os.Args, os.Getenv, logger, start); err != nil {
+		logger.Fatal(err)
 	}
 }
