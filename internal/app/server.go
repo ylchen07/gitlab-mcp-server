@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/ylchen07/gitlab-mcp-server/internal/gitlab"
@@ -112,6 +113,31 @@ func (s *Server) registerTools() {
 			mcp.Description("GitLab project ID or path with namespace"),
 		),
 	), s.handleGetProjectStatus)
+
+	s.addTool(mcp.NewTool(
+		"list_old_pipelines",
+		mcp.WithDescription("List all pipelines in a project older than the provided age threshold"),
+		mcp.WithString("project_id_or_path", mcp.Required(),
+			mcp.Description("GitLab project ID or path with namespace"),
+		),
+		mcp.WithNumber("older_than_years", mcp.Required(),
+			mcp.Description("Age threshold in years; pipelines created before this many years ago will be included"),
+		),
+	), s.handleListOldPipelines)
+
+	s.addTool(mcp.NewTool(
+		"delete_old_pipelines",
+		mcp.WithDescription("Delete all pipelines in a project older than the provided age threshold"),
+		mcp.WithString("project_id_or_path", mcp.Required(),
+			mcp.Description("GitLab project ID or path with namespace"),
+		),
+		mcp.WithNumber("older_than_years", mcp.Required(),
+			mcp.Description("Age threshold in years; pipelines created before this many years ago will be deleted"),
+		),
+		mcp.WithBoolean("confirm",
+			mcp.Description("Set to true to actually delete pipelines; defaults to false for safety"),
+		),
+	), s.handleDeleteOldPipelines)
 }
 
 func (s *Server) addTool(tool mcp.Tool, handler func(context.Context, mcp.CallToolRequest) (*mcp.CallToolResult, error)) {
@@ -291,5 +317,125 @@ func (s *Server) handleGetProjectStatus(ctx context.Context, request mcp.CallToo
 	return mcp.NewToolResultText(fmt.Sprintf(
 		"Project status for '%s':\n\n%s",
 		project.PathWithNamespace, string(jsonData),
+	)), nil
+}
+
+func (s *Server) handleListOldPipelines(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectIDOrPath, err := request.RequireString("project_id_or_path")
+	if err != nil {
+		return nil, fmt.Errorf("project_id_or_path is required: %w", err)
+	}
+
+	projectIDOrPath = strings.TrimSpace(projectIDOrPath)
+	if projectIDOrPath == "" {
+		return mcp.NewToolResultText("project_id_or_path cannot be empty"), nil
+	}
+
+	years, err := request.RequireInt("older_than_years")
+	if err != nil {
+		return nil, fmt.Errorf("older_than_years is required: %w", err)
+	}
+
+	if years <= 0 {
+		return mcp.NewToolResultText("older_than_years must be greater than zero"), nil
+	}
+
+	cutoff := time.Now().UTC().AddDate(-years, 0, 0)
+
+	pipelines, err := s.gitlab.ListOldPipelines(ctx, projectIDOrPath, cutoff)
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf("Error listing old pipelines: %v", err)), nil
+	}
+
+	if len(pipelines) == 0 {
+		return mcp.NewToolResultText(fmt.Sprintf(
+			"No pipelines in project %s are older than %d years (cutoff %s).",
+			projectIDOrPath, years, cutoff.Format(time.RFC3339),
+		)), nil
+	}
+
+	jsonData, err := json.MarshalIndent(pipelines, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf("Error serializing pipeline list: %v", err)), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf(
+		"Found %d pipelines in project %s created before %s (older than %d years):\n\n%s",
+		len(pipelines), projectIDOrPath, cutoff.Format(time.RFC3339), years, string(jsonData),
+	)), nil
+}
+
+func (s *Server) handleDeleteOldPipelines(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
+	projectIDOrPath, err := request.RequireString("project_id_or_path")
+	if err != nil {
+		return nil, fmt.Errorf("project_id_or_path is required: %w", err)
+	}
+
+	projectIDOrPath = strings.TrimSpace(projectIDOrPath)
+	if projectIDOrPath == "" {
+		return mcp.NewToolResultText("project_id_or_path cannot be empty"), nil
+	}
+
+	years, err := request.RequireInt("older_than_years")
+	if err != nil {
+		return nil, fmt.Errorf("older_than_years is required: %w", err)
+	}
+
+	if years <= 0 {
+		return mcp.NewToolResultText("older_than_years must be greater than zero"), nil
+	}
+
+	if !request.GetBool("confirm", false) {
+		return mcp.NewToolResultText(
+			"Deletion not performed: set confirm=true to delete pipelines after reviewing list_old_pipelines output.",
+		), nil
+	}
+
+	cutoff := time.Now().UTC().AddDate(-years, 0, 0)
+
+	summary, err := s.gitlab.DeleteOldPipelines(ctx, projectIDOrPath, cutoff)
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf("Error deleting old pipelines: %v", err)), nil
+	}
+
+	if summary.TotalCandidates == 0 {
+		return mcp.NewToolResultText(fmt.Sprintf(
+			"No pipelines in project %s are older than %d years (cutoff %s).",
+			projectIDOrPath, years, cutoff.Format(time.RFC3339),
+		)), nil
+	}
+
+	result := map[string]any{
+		"project":          projectIDOrPath,
+		"cutoff":           cutoff.Format(time.RFC3339),
+		"older_than_years": years,
+		"total_candidates": summary.TotalCandidates,
+		"deleted_count":    len(summary.DeletedIDs),
+		"deleted_ids":      summary.DeletedIDs,
+	}
+
+	if len(summary.Failed) > 0 {
+		result["failed_deletions"] = summary.Failed
+	}
+
+	jsonData, err := json.MarshalIndent(result, "", "  ")
+	if err != nil {
+		return mcp.NewToolResultText(fmt.Sprintf(
+			"Deletion completed but failed to serialize response: %v", err,
+		)), nil
+	}
+
+	if len(summary.Failed) > 0 {
+		return mcp.NewToolResultText(fmt.Sprintf(
+			"Deleted %d/%d pipelines older than %d years in project %s (cutoff %s). Some deletions failed:\n\n%s",
+			len(summary.DeletedIDs), summary.TotalCandidates, years, projectIDOrPath,
+			cutoff.Format(time.RFC3339), string(jsonData),
+		)), nil
+	}
+
+	return mcp.NewToolResultText(fmt.Sprintf(
+		"Deleted %d/%d pipelines older than %d years in project %s (cutoff %s):\n\n%s",
+		len(summary.DeletedIDs), summary.TotalCandidates, years,
+		projectIDOrPath, cutoff.Format(time.RFC3339), string(jsonData),
 	)), nil
 }

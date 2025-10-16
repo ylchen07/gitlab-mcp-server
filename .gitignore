@@ -1,3 +1,7 @@
 # Environment variables
 .env
 .task
+
+# Local build cache and artifacts
+.cache/
+gitlab-mcp-server
