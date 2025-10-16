@@ -1,0 +1,20 @@
+version: 2
+updates:
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    assignees:
+      - "ylchen07"
+    reviewers:
+      - "ylchen07"
+    labels:
+      - "dependencies"
+      - "automated-update"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    labels:
+      - "dependencies"
+      - "automated-update"
