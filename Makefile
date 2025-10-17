@@ -2,7 +2,7 @@ GOCMD             := go
 GOCACHE_DIR      ?= $(CURDIR)/.cache/go-build
 GOMODCACHE_DIR   ?= $(CURDIR)/.cache/go-mod
 BINARY_NAME      ?= gitlab-mcp-server
-PACKAGE_RUN       := ./cmd/gitlab-mcp-server
+PACKAGE_RUN       := ./cmd/server
 
 GO_ENV            := CGO_ENABLED=0 GOCACHE=$(GOCACHE_DIR) GOMODCACHE=$(GOMODCACHE_DIR)
 GOTEST            := $(GO_ENV) $(GOCMD) test ./...
