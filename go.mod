@@ -5,7 +5,7 @@ go 1.24.5
 require (
 	github.com/mark3labs/mcp-go v0.42.0
 	github.com/spf13/cobra v1.10.1
-	gitlab.com/gitlab-org/api/client-go v0.157.0
+	gitlab.com/gitlab-org/api/client-go v0.157.1
 )
 
 require (
